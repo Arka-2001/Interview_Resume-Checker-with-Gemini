@@ -2,6 +2,7 @@ const { GoogleGenAI } = require("@google/genai");
 const z = require("zod");
 const { zodToJsonSchema } = require("zod-to-json-schema")
 const puppeteer = require("puppeteer")
+const PDFDocument = require("pdfkit")
 
 const ai = new GoogleGenAI({
     apiKey: process.env.GOOGLE_GENAI_API_KEY
@@ -405,6 +406,31 @@ async function generatePdfFromHtml(htmlContent) {
     return pdfBuffer
 }
 
+async function generatePdfFromText(textContent) {
+    return new Promise((resolve, reject) => {
+        const doc = new PDFDocument({ size: "A4", margin: 40 })
+        const chunks = []
+
+        doc.on("data", (chunk) => chunks.push(chunk))
+        doc.on("end", () => resolve(Buffer.concat(chunks)))
+        doc.on("error", reject)
+
+        const plainText = textContent
+            .replace(/<style[\s\S]*?<\/style>/gi, "")
+            .replace(/<script[\s\S]*?<\/script>/gi, "")
+            .replace(/<[^>]+>/g, "\n")
+            .replace(/\n\s*\n+/g, "\n\n")
+            .trim()
+
+        doc.fontSize(11).text(plainText, {
+            width: 510,
+            align: "left"
+        })
+
+        doc.end()
+    })
+}
+
 async function generateResumePdf({ resume, selfDescription, jobDescription }) {
 
     const resumePdfSchema = z.object({
@@ -439,9 +465,12 @@ async function generateResumePdf({ resume, selfDescription, jobDescription }) {
         throw new Error("Invalid PDF HTML content returned from AI service")
     }
 
-    const pdfBuffer = await generatePdfFromHtml(jsonContent.html)
-
-    return pdfBuffer
+    try {
+        return await generatePdfFromHtml(jsonContent.html)
+    } catch (error) {
+        console.error("Puppeteer PDF generation failed, falling back to PDFKit:", error)
+        return await generatePdfFromText(jsonContent.html)
+    }
 
 }
 

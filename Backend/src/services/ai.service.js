@@ -415,17 +415,110 @@ async function generatePdfFromText(textContent) {
         doc.on("end", () => resolve(Buffer.concat(chunks)))
         doc.on("error", reject)
 
-        const plainText = textContent
+        const html = textContent
             .replace(/<style[\s\S]*?<\/style>/gi, "")
             .replace(/<script[\s\S]*?<\/script>/gi, "")
-            .replace(/<[^>]+>/g, "\n")
-            .replace(/\n\s*\n+/g, "\n\n")
-            .trim()
+            .replace(/<br\s*\/?>/gi, "<br>")
+            .replace(/<h([1-6])[^>]*>/gi, "<h$1>")
+            .replace(/<p[^>]*>/gi, "<p>")
+            .replace(/<li[^>]*>/gi, "<li>")
+            .replace(/<ul[^>]*>/gi, "<ul>")
+            .replace(/<ol[^>]*>/gi, "<ol>")
+            .replace(/<[^>]+>/g, (match) => match.toLowerCase())
 
-        doc.fontSize(11).text(plainText, {
-            width: 510,
-            align: "left"
-        })
+        const tokens = html.split(/(<\/?.+?>)/g).filter(Boolean)
+        let currentTag = null
+        let listDepth = 0
+
+        const flushText = (text, options = {}) => {
+            if (!text.trim()) return
+            const fontSize = options.heading ? 14 - options.heading * 1.5 : 11
+            const fontName = options.heading ? "Helvetica-Bold" : "Helvetica"
+            doc.font(fontName).fontSize(fontSize)
+
+            if (options.bullet) {
+                const indent = 20 * listDepth
+                doc.text(`• ${text.trim()}`, {
+                    paragraphGap: 2,
+                    indent: indent,
+                    continued: false,
+                    width: 510 - indent
+                })
+            } else {
+                doc.text(text.trim(), {
+                    paragraphGap: options.heading ? 6 : 4,
+                    lineGap: 2,
+                    continued: false,
+                    width: 510
+                })
+            }
+        }
+
+        for (const token of tokens) {
+            const trimmed = token.trim()
+            if (!trimmed) continue
+
+            if (/^<h([1-6])>$/i.test(trimmed)) {
+                currentTag = trimmed.toLowerCase()
+                continue
+            }
+
+            if (/^<\/h([1-6])>$/i.test(trimmed)) {
+                currentTag = null
+                doc.moveDown(0.3)
+                continue
+            }
+
+            if (/^<p>$/i.test(trimmed)) {
+                currentTag = "p"
+                continue
+            }
+
+            if (/^<\/p>$/i.test(trimmed)) {
+                currentTag = null
+                doc.moveDown(0.15)
+                continue
+            }
+
+            if (/^<ul>$|^<ol>$/i.test(trimmed)) {
+                listDepth += 1
+                continue
+            }
+
+            if (/^<\/ul>$|^<\/ol>$/i.test(trimmed)) {
+                listDepth = Math.max(listDepth - 1, 0)
+                doc.moveDown(0.1)
+                continue
+            }
+
+            if (/^<li>$/i.test(trimmed)) {
+                currentTag = "li"
+                continue
+            }
+
+            if (/^<\/li>$/i.test(trimmed)) {
+                currentTag = null
+                continue
+            }
+
+            if (/^<br>$/i.test(trimmed)) {
+                doc.moveDown(0.2)
+                continue
+            }
+
+            if (currentTag && /^h([1-6])$/i.test(currentTag)) {
+                const level = Number(currentTag.slice(1))
+                flushText(trimmed, { heading: level })
+                continue
+            }
+
+            if (currentTag === "li") {
+                flushText(trimmed, { bullet: true })
+                continue
+            }
+
+            flushText(trimmed)
+        }
 
         doc.end()
     })

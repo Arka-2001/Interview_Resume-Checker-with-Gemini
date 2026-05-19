@@ -374,7 +374,20 @@ ${selfDescription}
 }
 
 async function generatePdfFromHtml(htmlContent) {
-    const browser = await puppeteer.launch()
+    const browser = await puppeteer.launch({
+        headless: "new",
+        args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-accelerated-2d-canvas",
+            "--no-first-run",
+            "--no-zygote",
+            "--single-process"
+        ],
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
+    })
+
     const page = await browser.newPage();
     await page.setContent(htmlContent, { waitUntil: "networkidle0" })
 
@@ -420,8 +433,11 @@ async function generateResumePdf({ resume, selfDescription, jobDescription }) {
         }
     })
 
-
     const jsonContent = JSON.parse(response.text)
+
+    if (!jsonContent || typeof jsonContent.html !== "string" || !jsonContent.html.trim()) {
+        throw new Error("Invalid PDF HTML content returned from AI service")
+    }
 
     const pdfBuffer = await generatePdfFromHtml(jsonContent.html)
 

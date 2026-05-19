@@ -5,8 +5,21 @@ const cors = require("cors")
 
 app.use(express.json());
 app.use(cookieParser())
+
+const allowedOrigins = [
+    "https://interview-resume-checker-with-gemin.vercel.app",
+    "https://interview-resume-checker-with-gemini.onrender.com",
+    "http://localhost:5173"
+]
+
 app.use(cors({
-    origin: "https://interview-resume-checker-with-gemin.vercel.app/",
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true)
+        } else {
+            callback(new Error(`CORS policy: origin ${origin} not allowed`))
+        }
+    },
     credentials: true
 }))
 
